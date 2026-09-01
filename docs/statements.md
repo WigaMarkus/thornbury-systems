@@ -24,9 +24,11 @@ fallback, and so is a period that runs backwards.
 | `customer` | Who it is for. Name and address as billed. |
 | `period` | The dates actually used, including the ones we resolved for you. |
 | `broughtForward` | Unpaid invoices issued before the period started. |
-| `lines[]` | One row per invoice in the period: id, issue date, source, whether it is settled, its figures, and what is still owed on it. |
-| `invoicedInPeriod` | Everything billed in the period, settled or not. |
-| `closingBalance` | `broughtForward` plus whatever in the period is still unpaid. The one number the customer is reconciling to. |
+| `lines[]` | One row per invoice in the period: id, issue date, source, whether it is settled, its net, VAT and rate bands, and what is still owed on it. |
+| `netInPeriod`, `vatInPeriod` | The period split the way Finance reconcile it. |
+| `invoicedInPeriod` | Everything billed in the period gross, settled or not. |
+| `closingBalance` | `broughtForward` plus whatever in the period is still unpaid, gross. The one number the customer is reconciling to. |
+| `vatConfirmed` | False when any line is taxed on an assumption Finance has not signed off (see `docs/vat.md`). The figures are usable, they are just not settled. |
 | `display` | The same figures formatted as sterling, so the front end never divides by 100. |
 
 Every figure comes out of `totalFor()` in `src/invoices/calc.ts`. The statement
@@ -51,8 +53,11 @@ Invoice dates are compared as `YYYY-MM-DD` strings. Nothing in the statement bui
   a period statement, and worth saying out loud because it means the closing balance
   and the account's outstanding balance are the same figure only when the period runs
   to today.
-- **VAT.** JOB A is adding it to `totalFor()`. When that lands the statement carries
-  net, VAT and gross per line for free, but whether the statement needs a VAT summary
-  block of its own is a Finance question, not a code one.
+- **VAT.** JOB A landed while this was in review. The statement picked up net, VAT and
+  the rate bands per line without `statement.ts` changing, which was the point of
+  spreading the totals object; the merge needed only the new `customer` argument on
+  `totalFor()`. `vatConfirmed` is carried up to the statement, so a statement is
+  flagged as unsettled if any line on it is. Whether the front end shows a VAT summary
+  block, and in what form, is Finance's call.
 - **No PDF.** The ticket asks for one document; the front end team said they can render
   anything off an endpoint. This is the endpoint. Rendering is theirs.

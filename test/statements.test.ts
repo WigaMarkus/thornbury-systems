@@ -14,6 +14,10 @@ const acme: Customer = {
   address: 'Somewhere',
   accountType: 'COMMERCIAL',
   vatRegistered: true,
+  // Zero rated so the figures below stay readable. VAT reaching the statement is
+  // covered on its own further down.
+  supplyVatLiability: 'ZERO_RATED',
+  supplyVatConfirmed: true,
 };
 
 function invoice(id: string, issued: string, pence: number, paid: boolean): Invoice {
@@ -70,7 +74,7 @@ test('the closing balance is what the customer owes at the end of the period', (
 
 test('over the whole account the closing balance agrees with the outstanding balance', () => {
   const s = statementFor(acme, quarter);
-  assert.equal(s.closingBalance, outstandingFor(acme.id, quarter));
+  assert.equal(s.closingBalance, outstandingFor(acme, quarter));
 });
 
 test('an unasked-for period spans everything we have billed', () => {
@@ -101,14 +105,17 @@ test('line figures come from the invoice calculation, not from the statement', (
   const s = statementFor(trelawney, invoices);
   for (const line of s.lines) {
     const source = invoices.find((i) => i.id === line.invoiceId)!;
-    assert.deepEqual({ net: line.net, total: line.total }, totalFor(source));
+    const expected = totalFor(source, trelawney);
+    assert.equal(line.net, expected.net);
+    assert.equal(line.vat, expected.vat);
+    assert.equal(line.total, expected.total);
   }
 });
 
 test('the real account reconciles to one figure', () => {
   const s = statementFor(trelawney, invoices);
   assert.equal(s.customer.name, 'Trelawney Foods Ltd');
-  assert.equal(s.closingBalance, outstandingFor('C-1002', invoices));
+  assert.equal(s.closingBalance, outstandingFor(trelawney, invoices));
 });
 
 test('one bound on its own stays one sided', () => {
@@ -121,4 +128,24 @@ test('one bound on its own stays one sided', () => {
   assert.deepEqual(untilMay.period, { from: null, to: '2026-05-01' });
   assert.deepEqual(untilMay.lines.map((l) => l.invoiceId), ['INV-1', 'INV-2', 'INV-3']);
   assert.equal(untilMay.broughtForward, 0);
+});
+
+test('VAT worked out on the invoice reaches the statement', () => {
+  const standardRated: Customer = { ...acme, supplyVatLiability: 'STANDARD_RATED' };
+  const s = statementFor(standardRated, [invoice('INV-7', '2026-05-01', 10000, false)]);
+
+  assert.equal(s.netInPeriod, 10000);
+  assert.equal(s.vatInPeriod, 2000);
+  assert.equal(s.invoicedInPeriod, 12000);
+  // What the customer owes is the gross figure, not the net one.
+  assert.equal(s.closingBalance, 12000);
+  assert.equal(s.display.vatInPeriod, '£20.00');
+  assert.equal(s.lines[0]!.display.net, '£100.00');
+});
+
+test('a statement says when its VAT is not settled', () => {
+  const unconfirmed: Customer = { ...acme, supplyVatLiability: 'STANDARD_RATED', supplyVatConfirmed: false };
+  const s = statementFor(unconfirmed, [invoice('INV-8', '2026-05-01', 10000, false)]);
+  assert.equal(s.vatConfirmed, false);
+  assert.equal(statementFor(acme, quarter).vatConfirmed, true);
 });

@@ -2,8 +2,8 @@
 //
 // A statement is a read-only view over invoices that already exist. It works out
 // nothing about money on its own: every figure comes from totalFor() in calc.ts,
-// so a change to how an invoice totals (VAT, surcharges) shows up here without
-// this file being touched.
+// so a change to how an invoice totals reaches the statement without this file
+// being touched.
 //
 // Dates on invoices are plain YYYY-MM-DD strings and are compared as strings.
 // Nothing in here builds a Date, so nothing in here has a UTC/UK local problem.
@@ -12,7 +12,7 @@ import { format, sum, type Pence } from '../shared/money.ts';
 import { totalFor, type InvoiceTotal } from './calc.ts';
 import type { Customer, Invoice } from '../db.ts';
 
-// Both bounds are inclusive. Either may be left out, which means unbounded.
+// Both bounds are inclusive. Either may be null, which means unbounded.
 export interface StatementPeriod {
   from: string | null;
   to: string | null;
@@ -23,9 +23,11 @@ export type StatementLine = InvoiceTotal & {
   issued: string;
   source: Invoice['source'];
   paid: boolean;
-  // What is still owed on this invoice: the total, or nothing if it is settled.
+  // What is still owed on this invoice: the gross total, or nothing if settled.
   outstanding: Pence;
   display: {
+    net: string;
+    vat: string;
     total: string;
     outstanding: string;
   };
@@ -44,11 +46,18 @@ export interface Statement {
   broughtForward: Pence;
   lines: StatementLine[];
   // Everything invoiced in the period, settled or not.
+  netInPeriod: Pence;
+  vatInPeriod: Pence;
   invoicedInPeriod: Pence;
   // broughtForward plus whatever in the period is still unpaid.
   closingBalance: Pence;
+  // False when any line on the statement is taxed on an assumption Finance has
+  // not signed off. The figures are still usable, they are just not settled.
+  vatConfirmed: boolean;
   display: {
     broughtForward: string;
+    netInPeriod: string;
+    vatInPeriod: string;
     invoicedInPeriod: string;
     closingBalance: string;
   };
@@ -72,8 +81,8 @@ function resolvePeriod(mine: Invoice[], requested: Partial<StatementPeriod>): St
   return { from: requested.from ?? null, to: requested.to ?? null };
 }
 
-function lineFor(invoice: Invoice): StatementLine {
-  const totals = totalFor(invoice);
+function lineFor(invoice: Invoice, customer: Customer): StatementLine {
+  const totals = totalFor(invoice, customer);
   const outstanding = invoice.paid ? 0 : totals.total;
 
   return {
@@ -81,10 +90,13 @@ function lineFor(invoice: Invoice): StatementLine {
     issued: invoice.issued,
     source: invoice.source,
     paid: invoice.paid,
-    // Spread, not picked apart, so anything calc.ts starts returning is carried.
+    // Spread, not picked apart, so anything calc.ts starts returning is carried
+    // onto the line without this file being edited again.
     ...totals,
     outstanding,
     display: {
+      net: format(totals.net),
+      vat: format(totals.vat),
       total: format(totals.total),
       outstanding: format(outstanding),
     },
@@ -102,14 +114,16 @@ export function statementFor(
   const lines = mine
     .filter((i) => within(i.issued, period))
     .sort((a, b) => (a.issued === b.issued ? a.id.localeCompare(b.id) : a.issued.localeCompare(b.issued)))
-    .map(lineFor);
+    .map((invoice) => lineFor(invoice, customer));
 
   const broughtForward = sum(
     mine
       .filter((i) => !i.paid && period.from !== null && i.issued < period.from)
-      .map((i) => totalFor(i).total),
+      .map((i) => totalFor(i, customer).total),
   );
 
+  const netInPeriod = sum(lines.map((l) => l.net));
+  const vatInPeriod = sum(lines.map((l) => l.vat));
   const invoicedInPeriod = sum(lines.map((l) => l.total));
   const closingBalance = broughtForward + sum(lines.map((l) => l.outstanding));
 
@@ -124,10 +138,15 @@ export function statementFor(
     period,
     broughtForward,
     lines,
+    netInPeriod,
+    vatInPeriod,
     invoicedInPeriod,
     closingBalance,
+    vatConfirmed: lines.every((l) => l.vatConfirmed),
     display: {
       broughtForward: format(broughtForward),
+      netInPeriod: format(netInPeriod),
+      vatInPeriod: format(vatInPeriod),
       invoicedInPeriod: format(invoicedInPeriod),
       closingBalance: format(closingBalance),
     },
