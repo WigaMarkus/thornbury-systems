@@ -42,7 +42,7 @@ export const server = createServer((req, res) => {
     if (!customer) return json(res, 404, { error: 'no such customer' });
     return json(res, 200, {
       ...customer,
-      outstanding: format(outstandingFor(customer.id, invoices)),
+      outstanding: format(outstandingFor(customer, invoices)),
     });
   }
 
@@ -53,8 +53,18 @@ export const server = createServer((req, res) => {
   if (parts[0] === 'invoices' && parts.length === 2) {
     const invoice = invoices.find((i) => i.id === parts[1]);
     if (!invoice) return json(res, 404, { error: 'no such invoice' });
-    const totals = totalFor(invoice);
-    return json(res, 200, { ...invoice, ...totals, display: format(totals.total) });
+    const customer = customers.find((c) => c.id === invoice.customerId);
+    if (!customer) return json(res, 500, { error: 'invoice has no customer', customerId: invoice.customerId });
+    const totals = totalFor(invoice, customer);
+    // display stays the gross total the front end already reads. Net and VAT are
+    // new fields alongside it so nothing that renders display has to change.
+    return json(res, 200, {
+      ...invoice,
+      ...totals,
+      display: format(totals.total),
+      displayNet: format(totals.net),
+      displayVat: format(totals.vat),
+    });
   }
 
   if (parts[0] === 'work-orders') {
