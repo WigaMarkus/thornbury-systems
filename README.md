@@ -1,23 +1,42 @@
 # Thornbury Systems
 
-Billing and job scheduling for UK water utilities. This repository is the API the
-web front end talks to. The desktop product is not in here.
+Billing and job scheduling for UK water utilities. This repository is the API,
+the web front end, and the database. The desktop product is not in here.
 
 ## Running it
 
-No install step. Node 22.6 or newer runs the TypeScript directly.
+The API has no install step. Node 22.6 or newer runs the TypeScript directly.
 
 ```
-npm test        # the suite
-npm start       # http://localhost:4310
+npm test        # the suite (80 tests)
+npm start       # API + built front end on http://localhost:4310
 ```
+
+The front end ships pre-built in `web/dist` after `npm run build` there. To work
+on it:
+
+```
+cd web
+npm install
+npm run dev     # Vite on :5173, proxying API calls to :4310 (run npm start too)
+npm run build   # emits web/dist, which npm start serves
+```
+
+The same URLs serve both audiences: a browser gets the app, curl and the test
+suite get JSON (content negotiation on the Accept header).
+
+Data lives in `data/thornbury.db` (SQLite via node:sqlite, no dependencies),
+created and seeded from `src/db.ts` on first start. Delete the `data/` folder
+for a factory-fresh demo state.
 
 ## Layout
 
 - `src/invoices` billing. Totals, VAT, balances, statements.
 - `src/scheduling` work orders, engineer dispatch, customer appointment windows.
 - `src/shared` money and dates. Both are used by both sides, so changes here reach further than they look.
-- `src/db.ts` the seed data. Stands in for the SQL Server tables.
+- `src/db.ts` the seed data, and the source of truth for the entity types. Seeds the SQLite database on first boot.
+- `src/repo.ts` the SQLite layer. Tests get an isolated in-memory database per process automatically.
+- `web/` the React front end. Money arrives pre-formatted from the API; every timestamp renders Europe/London.
 - `jobs/` the support queue. The four that were open are done; JOB D carries its
   write up in the ticket.
 - `docs/` the decisions behind the billing rules. `vat.md` for what is rated how and
