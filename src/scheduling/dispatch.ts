@@ -33,17 +33,40 @@ function alreadyVisiting(address: string, when: Date, planned: Assignment[]): bo
   );
 }
 
-export function dispatch(orders: WorkOrder[]): Assignment[] {
+export type UnassignedReason = 'DUPLICATE_VISIT' | 'NO_ENGINEER_WITH_SKILL';
+
+export interface Unassigned {
+  workOrderId: string;
+  reason: UnassignedReason;
+}
+
+export interface DispatchResult {
+  assignments: Assignment[];
+  unassigned: Unassigned[];
+}
+
+// Same loop as dispatch() always ran, but the two reasons an order is passed
+// over are reported instead of silently dropped. Orders that are not QUEUED are
+// skipped without comment: they are not waiting for a van, so they are neither
+// assigned nor unassigned.
+export function dispatchDetailed(orders: WorkOrder[]): DispatchResult {
   const planned: Assignment[] = [];
+  const unassigned: Unassigned[] = [];
 
   for (const order of orders) {
     if (order.status !== 'QUEUED') continue;
     const when = new Date(order.requestedAt);
 
-    if (alreadyVisiting(order.address, when, planned)) continue;
+    if (alreadyVisiting(order.address, when, planned)) {
+      unassigned.push({ workOrderId: order.id, reason: 'DUPLICATE_VISIT' });
+      continue;
+    }
 
     const engineer = engineers.find((e) => canDo(e, order));
-    if (!engineer) continue;
+    if (!engineer) {
+      unassigned.push({ workOrderId: order.id, reason: 'NO_ENGINEER_WITH_SKILL' });
+      continue;
+    }
 
     planned.push({
       workOrderId: order.id,
@@ -53,5 +76,9 @@ export function dispatch(orders: WorkOrder[]): Assignment[] {
     });
   }
 
-  return planned;
+  return { assignments: planned, unassigned };
+}
+
+export function dispatch(orders: WorkOrder[]): Assignment[] {
+  return dispatchDetailed(orders).assignments;
 }

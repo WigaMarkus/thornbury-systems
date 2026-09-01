@@ -4,3 +4,10 @@ node_modules/
 
 # tooling artefacts
 .claude/evidence/
+
+# local SQLite database
+data/
+
+# front end build output
+web/node_modules/
+web/dist/
