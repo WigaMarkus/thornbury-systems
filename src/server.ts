@@ -1,11 +1,13 @@
 import { createServer } from 'node:http';
 import { customers, invoices, workOrders } from './db.ts';
 import { totalFor, outstandingFor } from './invoices/calc.ts';
+import { statementFor } from './invoices/statement.ts';
 import { dispatch } from './scheduling/dispatch.ts';
 import { slotsFor } from './scheduling/slots.ts';
 import { format } from './shared/money.ts';
 
 const PORT = Number(process.env.PORT ?? 4310);
+const DATE_KEY = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
 
 function json(res: import('node:http').ServerResponse, status: number, body: unknown) {
   const payload = JSON.stringify(body, null, 2);
@@ -25,6 +27,7 @@ export const server = createServer((req, res) => {
         'GET /customers',
         'GET /customers/:id',
         'GET /customers/:id/invoices',
+        'GET /customers/:id/statement?from=YYYY-MM-DD&to=YYYY-MM-DD',
         'GET /invoices/:id',
         'GET /work-orders',
         'GET /dispatch',
@@ -48,6 +51,21 @@ export const server = createServer((req, res) => {
 
   if (parts[0] === 'customers' && parts.length === 3 && parts[2] === 'invoices') {
     return json(res, 200, invoices.filter((i) => i.customerId === parts[1]));
+  }
+
+  if (parts[0] === 'customers' && parts.length === 3 && parts[2] === 'statement') {
+    const customer = customers.find((c) => c.id === parts[1]);
+    if (!customer) return json(res, 404, { error: 'no such customer' });
+
+    // Both are optional. A missing bound is unbounded; neither given means the
+    // statement covers everything we have billed this customer.
+    const from = url.searchParams.get('from');
+    const to = url.searchParams.get('to');
+    const bad = [from, to].find((v) => v !== null && !DATE_KEY.test(v));
+    if (bad !== undefined) return json(res, 400, { error: 'from and to must be YYYY-MM-DD', got: bad });
+    if (from && to && from > to) return json(res, 400, { error: 'from is after to', from, to });
+
+    return json(res, 200, statementFor(customer, invoices, { from, to }));
   }
 
   if (parts[0] === 'invoices' && parts.length === 2) {
