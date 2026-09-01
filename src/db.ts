@@ -8,7 +8,18 @@ export interface Customer {
   name: string;
   address: string;
   accountType: 'DOMESTIC' | 'COMMERCIAL';
+  // Whether the customer can reclaim VAT. It does not change the rate we charge
+  // them, so nothing in the VAT calculation reads this. See docs/vat.md.
   vatRegistered: boolean;
+  // VAT liability of this customer's water supply. Engineer work is standard
+  // rated for everybody and does not depend on this.
+  //
+  // Domestic supply is zero rated. Commercial supply is only standard rated when
+  // the customer's trade falls in Divisions 1 to 5 of the 1980 SIC, and we do not
+  // hold SIC codes. The two commercial values below are read off the account name
+  // and are NOT confirmed. See docs/vat.md, open question 1.
+  supplyVatLiability: 'ZERO_RATED' | 'STANDARD_RATED';
+  supplyVatConfirmed: boolean;
 }
 
 export interface LineItem {
@@ -49,10 +60,14 @@ export interface WorkOrder {
 }
 
 export const customers: Customer[] = [
-  { id: 'C-1001', name: 'Mrs J Whitcombe', address: '14 Ashfield Row, Bristol', accountType: 'DOMESTIC', vatRegistered: false },
-  { id: 'C-1002', name: 'Trelawney Foods Ltd', address: 'Unit 6, Severnside Park, Avonmouth', accountType: 'COMMERCIAL', vatRegistered: true },
-  { id: 'C-1003', name: 'Dr A Kowalski', address: '2 Bell Lane, Thornbury', accountType: 'DOMESTIC', vatRegistered: false },
-  { id: 'C-1004', name: 'Severn Vale Academy', address: 'Gloucester Road, Thornbury', accountType: 'COMMERCIAL', vatRegistered: true },
+  { id: 'C-1001', name: 'Mrs J Whitcombe', address: '14 Ashfield Row, Bristol', accountType: 'DOMESTIC', vatRegistered: false, supplyVatLiability: 'ZERO_RATED', supplyVatConfirmed: true },
+  // Food production reads as SIC 1980 Division 4, so standard rated. Guessed from
+  // the name, not from a SIC code. Finance to confirm.
+  { id: 'C-1002', name: 'Trelawney Foods Ltd', address: 'Unit 6, Severnside Park, Avonmouth', accountType: 'COMMERCIAL', vatRegistered: true, supplyVatLiability: 'STANDARD_RATED', supplyVatConfirmed: false },
+  { id: 'C-1003', name: 'Dr A Kowalski', address: '2 Bell Lane, Thornbury', accountType: 'DOMESTIC', vatRegistered: false, supplyVatLiability: 'ZERO_RATED', supplyVatConfirmed: true },
+  // A school is not in Divisions 1 to 5, so zero rated despite being a commercial
+  // account. This is the case that shows accountType alone cannot decide the rate.
+  { id: 'C-1004', name: 'Severn Vale Academy', address: 'Gloucester Road, Thornbury', accountType: 'COMMERCIAL', vatRegistered: true, supplyVatLiability: 'ZERO_RATED', supplyVatConfirmed: false },
 ];
 
 export const invoices: Invoice[] = [
