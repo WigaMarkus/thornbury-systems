@@ -39,13 +39,23 @@ one; that is a test of the developer's timezone, not of the code.
 `timeZone: 'Europe/London'` (`ukDateKey`, `formatSlotTime`). Regression tests pass
 under the host timezone and under `TZ=UTC`, and fail if either bug is reintroduced.
 
+**Second half, found while merging.** JOB B's duplicate visit check compared the
+*UTC* day. Trelawney's 23:30Z backflow test therefore counted as the same day as
+their 09:00Z one and was dropped from the dispatch plan: the customer would have had
+a confirmation and no engineer. JOB B's note handed the shared date split to JOB D and
+this file handed the day comparison back to JOB B, so it would have fallen between the
+two tickets. The whole suite was green while it was broken. `sameDay` is now
+`sameUkDay` and compares UK days; the genuine duplicate (W-5002, Mrs Whitcombe) is
+still caught. Committed separately so it can be reverted on its own.
+
 **Open points, not decided here:**
 
 1. A padded window on a just-after-midnight job opens the evening before, so W-5006
    reads "23:30 to 02:15" on 3 September. Correct, but odd to read. Marcus to say what
    a confirmation should print.
 2. `isWorkingDay` still mixes calendars: `getDay()` is host local, the bank holiday
-   list is UTC. Same family of bug, but dispatch (JOB B) and billing depend on the
-   current behaviour, so it belongs to those tickets. Flagged in the code.
+   list is UTC. Same family of bug. Nothing customer facing reads it today, so it is
+   left alone and flagged in the code; it needs an owner before anything starts
+   quoting working days to customers.
 3. The build box is set to UK time. That is why it never caught this. It should run
    the suite under at least one non-UK timezone.
