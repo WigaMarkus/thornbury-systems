@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import * as repo from './repo.ts';
-import { totalFor, outstandingFor } from './invoices/calc.ts';
+import { totalFor, outstandingFor, legacySurcharge } from './invoices/calc.ts';
 import { statementFor } from './invoices/statement.ts';
 import { dispatchDetailed } from './scheduling/dispatch.ts';
 import { slotsFor, slotFor } from './scheduling/slots.ts';
@@ -20,6 +20,18 @@ function isCalendarDate(value: string): boolean {
   if (!DATE_KEY.test(value)) return false;
   const d = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
+}
+
+const UTC_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?Z$/;
+
+// A string that is unambiguously a UTC instant: explicit Z suffix, a real
+// calendar date, and a time that survives the Date round trip (so 25:00 or
+// 2026-02-30 are out even where the regex alone would let odd values through).
+function isUtcInstant(value: string): boolean {
+  if (!UTC_INSTANT.test(value)) return false;
+  if (!isCalendarDate(value.slice(0, 10))) return false;
+  const d = new Date(value);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 16) === value.slice(0, 16);
 }
 
 // --- response shapes ----------------------------------------------------------
@@ -56,6 +68,7 @@ function invoiceDetail(invoice: InvoiceRecord, customer: Customer) {
     display: format(totals.total),
     displayNet: format(totals.net),
     displayVat: format(totals.vat),
+    surchargePence: legacySurcharge(invoice),
     outstandingPence,
     payments,
   };
@@ -209,10 +222,20 @@ const ROUTES: Route[] = [
 
       const body = await readJsonBody(req);
 
-      let amountPence = totalFor(invoice, customer).total;
+      const due = totalFor(invoice, customer).total;
+      let amountPence = due;
       if (body.amountPence !== undefined) {
         if (typeof body.amountPence !== 'number' || !Number.isInteger(body.amountPence) || body.amountPence <= 0) {
           return json(res, 400, { error: 'amountPence must be a positive integer', got: body.amountPence });
+        }
+        // Partial payments are not a thing this system does: an invoice is either
+        // outstanding or settled in full, so a supplied amount must match the total.
+        if (body.amountPence !== due) {
+          return json(res, 400, {
+            error: 'amountPence must equal the outstanding total',
+            expectedPence: due,
+            got: body.amountPence,
+          });
         }
         amountPence = body.amountPence;
       }
@@ -226,6 +249,12 @@ const ROUTES: Route[] = [
       }
 
       const payment = repo.recordPayment(invoice.id, amountPence, paidOn);
+      if (payment === null) {
+        // Lost the race: another payment settled this invoice between the early
+        // paid check (which runs before the body is read) and now.
+        const settled = repo.getInvoice(invoice.id)!;
+        return json(res, 409, { error: 'invoice already paid', paidOn: settled.paidOn });
+      }
       const updated = repo.getInvoice(invoice.id)!;
       json(res, 201, {
         payment: { ...payment, display: format(payment.amountPence) },
@@ -292,9 +321,12 @@ const ROUTES: Route[] = [
       const requires = typeof body.requires === 'string' ? body.requires.trim().toUpperCase() : '';
       if (requires === '') return json(res, 400, { error: 'requires must not be empty', field: 'requires' });
 
+      // requestedAt must be an explicit UTC instant. A timezone-less string like
+      // '2026-09-05T09:00' is parsed in the host's local zone by every downstream
+      // new Date(), which reintroduces the W-4412 bug class through the write path.
       const requestedAt = typeof body.requestedAt === 'string' ? body.requestedAt : '';
-      if (Number.isNaN(Date.parse(requestedAt))) {
-        return json(res, 400, { error: 'requestedAt must be a valid timestamp', field: 'requestedAt' });
+      if (!isUtcInstant(requestedAt)) {
+        return json(res, 400, { error: 'requestedAt must be a UTC instant, e.g. 2026-09-02T08:00:00Z', field: 'requestedAt' });
       }
 
       const durationMinutes = body.durationMinutes;
@@ -325,7 +357,7 @@ const ROUTES: Route[] = [
     method: 'GET',
     parts: ['dispatch'],
     handler: (_req, res) => {
-      const result = dispatchDetailed(repo.listWorkOrders());
+      const result = dispatchDetailed(repo.listWorkOrders(), repo.listEngineers());
       json(res, 200, {
         assignments: enrichAssignments(result.assignments),
         unassigned: result.unassigned,
@@ -337,7 +369,7 @@ const ROUTES: Route[] = [
     method: 'POST',
     parts: ['dispatch', 'run'],
     handler: (_req, res) => {
-      const result = dispatchDetailed(repo.listWorkOrders());
+      const result = dispatchDetailed(repo.listWorkOrders(), repo.listEngineers());
       // Enrich before persisting so the slot and status reflect the plan that
       // was just made, then write the plan down.
       const assignments = enrichAssignments(result.assignments);
@@ -395,8 +427,16 @@ function matches(route: Route, parts: string[]): boolean {
 
 async function handle(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
-  const parts = url.pathname.split('/').filter(Boolean).map((s) => decodeURIComponent(s));
-  const method = req.method ?? 'GET';
+  let parts: string[];
+  try {
+    parts = url.pathname.split('/').filter(Boolean).map((s) => decodeURIComponent(s));
+  } catch (err) {
+    if (err instanceof URIError) throw new HttpError(400, 'malformed percent-encoding in URL path');
+    throw err;
+  }
+  // HEAD is answered by the GET route: Node discards body writes on a HEAD
+  // response, so the handler runs unchanged and only the headers go out.
+  const method = req.method === 'HEAD' ? 'GET' : (req.method ?? 'GET');
 
   if (method === 'OPTIONS') {
     res.writeHead(204, CORS_HEADERS);
@@ -439,8 +479,10 @@ export const server = createServer((req, res) => {
         if (!res.headersSent) return json(res, err.status, { error: err.message, ...err.extra });
         return res.end();
       }
-      const message = err instanceof Error ? err.message : String(err);
-      if (!res.headersSent) return json(res, 500, { error: message });
+      // The details go to the log, not the wire: internal messages can leak
+      // paths, SQL or other implementation detail to any caller.
+      console.error(err);
+      if (!res.headersSent) return json(res, 500, { error: 'internal server error' });
       res.end();
     });
 });

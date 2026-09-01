@@ -18,7 +18,7 @@ export function lineTotal(line: LineItem): Pence {
 
 // Paper invoices carried a printing and postage charge that the web product
 // never had. Kept so historic invoices still reconcile.
-function legacySurcharge(invoice: Invoice): Pence {
+export function legacySurcharge(invoice: Invoice): Pence {
   if (invoice.source === 'LEGACY_PAPER') {
     return 150;
   }

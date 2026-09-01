@@ -9,7 +9,7 @@ import {
   TriangleAlert,
 } from 'lucide-react';
 import { api, useFetch } from '../lib/api';
-import { ukDateTime, ukTime, ymdToDisplay } from '../lib/format';
+import { ukDateTime, ukTime, ukWallClockToIso, ymdToDisplay } from '../lib/format';
 import type { Assignment, UnassignedReason } from '../lib/types';
 import {
   Badge,
@@ -120,16 +120,23 @@ export default function Scheduling() {
 
   async function submitWorkOrder(e: FormEvent) {
     e.preventDefault();
-    setFormBusy(true);
     setFormError(null);
     setFormWarnings([]);
+    // The datetime-local value is a Europe/London wall-clock time; convert it
+    // to a UTC instant explicitly (never via new Date(), which uses the host
+    // machine's timezone).
+    const requestedAtIso = ukWallClockToIso(requestedAt);
+    if (!requestedAtIso) {
+      setFormError('Enter a valid requested date and time.');
+      return;
+    }
+    setFormBusy(true);
     try {
-      const parsed = new Date(requestedAt);
       const result = await api.createWorkOrder({
         customerId,
         address,
         requires,
-        requestedAt: Number.isNaN(parsed.getTime()) ? requestedAt : parsed.toISOString(),
+        requestedAt: requestedAtIso,
         durationMinutes: Number(duration),
       });
       setFormWarnings(result.warnings);
@@ -380,6 +387,9 @@ export default function Scheduling() {
                   onChange={(e) => setRequestedAt(e.target.value)}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
                 />
+                <span className="mt-1 block text-[11px] text-slate-400">
+                  Europe/London time
+                </span>
               </label>
               <label className="block">
                 <span className="mb-1 block text-xs font-medium text-slate-600">

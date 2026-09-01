@@ -38,7 +38,13 @@ function StatementView({ statement }: { statement: Statement }) {
       )}
 
       <p className="text-sm text-slate-600">
-        Period {ymdToDisplay(statement.period.from)} to {ymdToDisplay(statement.period.to)}
+        {statement.period.from && statement.period.to
+          ? `Period ${ymdToDisplay(statement.period.from)} to ${ymdToDisplay(statement.period.to)}`
+          : statement.period.from
+            ? `Period from ${ymdToDisplay(statement.period.from)}`
+            : statement.period.to
+              ? `Period up to ${ymdToDisplay(statement.period.to)}`
+              : 'Period: complete history'}
       </p>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
@@ -162,7 +168,9 @@ export default function CustomerDetail() {
 
   return (
     <>
-      <div className="no-print space-y-6">
+      {/* Only hide the page content from print once a statement exists; otherwise
+          printing this page should print the customer details, not a blank page. */}
+      <div className={statement ? 'no-print space-y-6' : 'space-y-6'}>
         <PageHeader title={customer.name} subtitle={customer.id} />
 
         <Card>
@@ -236,7 +244,7 @@ export default function CustomerDetail() {
       </div>
 
       <Card>
-        <div className="no-print">
+        <div className={statement ? 'no-print' : undefined}>
           <h2 className="text-sm font-semibold text-slate-900">Statement</h2>
           <p className="mt-0.5 text-xs text-slate-500">
             Leave dates blank for the default period
@@ -276,7 +284,7 @@ export default function CustomerDetail() {
 
         {statement && <StatementView statement={statement} />}
         {!statement && !stmtError && (
-          <div className="no-print">
+          <div>
             <EmptyState
               title="No statement generated yet"
               hint="Pick a period and press Generate."

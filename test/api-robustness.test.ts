@@ -21,7 +21,7 @@ test('a throwing route is a 500 that completes, not a hang', async () => {
   assert.equal(res.status, 500);
   // .json() only resolves if the response body actually arrived and finished.
   const body = await res.json();
-  assert.equal(body.error, 'boom');
+  assert.equal(body.error, 'internal server error');
 });
 
 test('the wrong method on a known path is a 405 that names the right one', async () => {
@@ -72,4 +72,26 @@ test('every customer carries a numeric balance and its display string', async ()
 test('the banner advertises the engineers route', async () => {
   const body = await (await fetch(`${base}/`)).json();
   assert.ok(body.routes.includes('GET /engineers'));
+});
+
+test('an unknown route with a default Accept is a JSON 404, not the SPA page', async () => {
+  const res = await fetch(`${base}/definitely-not-a-route`);
+  assert.equal(res.status, 404);
+  assert.ok((res.headers.get('content-type') ?? '').includes('application/json'));
+  const body = await res.json();
+  assert.equal(body.error, 'no such route');
+});
+
+test('HEAD on a GET route is a 200 with an empty body', async () => {
+  const res = await fetch(`${base}/customers`, { method: 'HEAD' });
+  assert.equal(res.status, 200);
+  const body = await res.text();
+  assert.equal(body, '');
+});
+
+test('malformed percent-encoding in the path is a 400, not a 500', async () => {
+  const res = await fetch(`${base}/customers/%ZZ`);
+  assert.equal(res.status, 400);
+  const body = await res.json();
+  assert.equal(body.error, 'malformed percent-encoding in URL path');
 });

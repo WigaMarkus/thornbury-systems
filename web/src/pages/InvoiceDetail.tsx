@@ -130,6 +130,21 @@ export default function InvoiceDetail() {
                   <Td money>{formatPence(line.quantity * line.unitPence)}</Td>
                 </tr>
               ))}
+              {invoice.surchargePence > 0 && (
+                <tr className="hover:bg-slate-50">
+                  <Td className="text-slate-900">Printing &amp; postage (legacy paper)</Td>
+                  <Td>
+                    <Badge tone="slate" outline>
+                      Supply
+                    </Badge>
+                  </Td>
+                  <Td align="right" className="tabular-nums">
+                    1
+                  </Td>
+                  <Td money>{formatPence(invoice.surchargePence)}</Td>
+                  <Td money>{formatPence(invoice.surchargePence)}</Td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

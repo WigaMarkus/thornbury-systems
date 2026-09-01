@@ -49,7 +49,7 @@ export interface DispatchResult {
 // over are reported instead of silently dropped. Orders that are not QUEUED are
 // skipped without comment: they are not waiting for a van, so they are neither
 // assigned nor unassigned.
-export function dispatchDetailed(orders: WorkOrder[]): DispatchResult {
+export function dispatchDetailed(orders: WorkOrder[], pool: Engineer[] = engineers): DispatchResult {
   // Visits already on the road count against the one-visit-per-address-per-day
   // rule too. Without this, the run that rightly suppressed a duplicate forgets
   // it ever existed once the first order is marked DISPATCHED, and the next run
@@ -77,7 +77,7 @@ export function dispatchDetailed(orders: WorkOrder[]): DispatchResult {
       continue;
     }
 
-    const engineer = engineers.find((e) => canDo(e, order));
+    const engineer = pool.find((e) => canDo(e, order));
     if (!engineer) {
       unassigned.push({ workOrderId: order.id, reason: 'NO_ENGINEER_WITH_SKILL' });
       continue;
@@ -94,6 +94,6 @@ export function dispatchDetailed(orders: WorkOrder[]): DispatchResult {
   return { assignments: planned, unassigned };
 }
 
-export function dispatch(orders: WorkOrder[]): Assignment[] {
-  return dispatchDetailed(orders).assignments;
+export function dispatch(orders: WorkOrder[], pool: Engineer[] = engineers): Assignment[] {
+  return dispatchDetailed(orders, pool).assignments;
 }

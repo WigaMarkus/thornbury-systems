@@ -294,14 +294,24 @@ export function listPayments(invoiceId: string): Payment[] {
   ).map(toPayment);
 }
 
-export function recordPayment(invoiceId: string, amountPence: number, paidOn: string): Payment {
+// Settling the invoice is conditional on it not being settled already: the
+// UPDATE only matches an unpaid row, so of two concurrent payments exactly one
+// wins and the other gets null back. The payment row is only inserted on the
+// winning path, keeping the history at one settlement per invoice.
+export function recordPayment(invoiceId: string, amountPence: number, paidOn: string): Payment | null {
   const recordedAt = new Date().toISOString();
   db.exec('BEGIN');
   try {
+    const settled = db
+      .prepare('UPDATE invoices SET paid = 1, paid_on = ? WHERE id = ? AND paid = 0')
+      .run(paidOn, invoiceId);
+    if (Number(settled.changes) !== 1) {
+      db.exec('ROLLBACK');
+      return null;
+    }
     const result = db
       .prepare('INSERT INTO payments (invoice_id, amount_pence, paid_on, recorded_at) VALUES (?, ?, ?, ?)')
       .run(invoiceId, amountPence, paidOn, recordedAt);
-    db.prepare('UPDATE invoices SET paid = 1, paid_on = ? WHERE id = ?').run(paidOn, invoiceId);
     db.exec('COMMIT');
     return {
       id: Number(result.lastInsertRowid),

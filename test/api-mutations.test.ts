@@ -158,3 +158,49 @@ test('reset puts every dispatched order back in the queue', async () => {
   const all = await (await fetch(`${base}/work-orders`)).json();
   assert.ok(all.every((w: { status: string }) => w.status !== 'DISPATCHED'));
 });
+
+test('a payment that does not settle the invoice in full is refused', async () => {
+  const res = await post('/invoices/INV-9003/payments', { amountPence: 1 });
+  assert.equal(res.status, 400);
+  const body = await res.json();
+  assert.equal(body.error, 'amountPence must equal the outstanding total');
+  assert.equal(typeof body.expectedPence, 'number');
+  assert.equal(body.got, 1);
+});
+
+test('settling the same invoice twice records exactly one payment', async () => {
+  const first = await post('/invoices/INV-9003/payments');
+  assert.equal(first.status, 201);
+
+  const second = await post('/invoices/INV-9003/payments');
+  assert.equal(second.status, 409);
+  const body = await second.json();
+  assert.equal(body.error, 'invoice already paid');
+
+  const invoice = await (await fetch(`${base}/invoices/INV-9003`)).json();
+  assert.equal(invoice.paid, true);
+  assert.equal(invoice.payments.length, 1);
+});
+
+test('requestedAt must be an explicit UTC instant', async () => {
+  const order = (requestedAt: string) => ({
+    customerId: 'C-1003',
+    address: '7 Chantry Close, Thornbury',
+    requires: 'LEAK',
+    requestedAt,
+    durationMinutes: 30,
+  });
+
+  // No Z suffix: parsed in the host's local zone downstream, so refused.
+  const noZone = await post('/work-orders', order('2026-09-05T09:00'));
+  assert.equal(noZone.status, 400);
+  assert.equal((await noZone.json()).field, 'requestedAt');
+
+  // Well-formed but not a real day.
+  const badDate = await post('/work-orders', order('2026-02-30T09:00:00Z'));
+  assert.equal(badDate.status, 400);
+  assert.equal((await badDate.json()).field, 'requestedAt');
+
+  const good = await post('/work-orders', order('2026-09-05T09:00:00Z'));
+  assert.equal(good.status, 201);
+});

@@ -63,6 +63,8 @@ export interface InvoiceDetail extends Invoice {
   displayNet: string;
   displayVat: string;
   outstandingPence: number;
+  // 150 for LEGACY_PAPER invoices (printing & postage surcharge), else 0.
+  surchargePence: number;
   payments: Payment[];
 }
 
@@ -82,7 +84,8 @@ export interface StatementLine {
 
 export interface Statement {
   customer: Customer;
-  period: { from: string; to: string };
+  // Either bound may be null for an unbounded (complete-history) statement.
+  period: { from: string | null; to: string | null };
   broughtForward: number;
   lines: StatementLine[];
   netInPeriod: number;

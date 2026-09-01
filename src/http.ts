@@ -117,7 +117,9 @@ export function serveStatic(req: IncomingMessage, res: ServerResponse, url: URL)
 
   // SPA fallback: a GET for a path with no file extension is a client-side
   // route, and gets index.html so the front end router can take it from there.
-  if (extname(rawPath) === '') {
+  // Only for clients that actually asked for HTML — an API caller with
+  // Accept: */* falls through to the JSON 404 instead of getting a page.
+  if (extname(rawPath) === '' && (req.headers.accept ?? '').includes('text/html')) {
     sendFile(res, indexHtml, 'no-cache');
     return true;
   }

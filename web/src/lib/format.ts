@@ -56,6 +56,36 @@ export function ukDateTime(iso: string): string {
   return `${ukDate(iso)}, ${ukTime(iso)}`;
 }
 
+// Convert a <input type="datetime-local"> value ('YYYY-MM-DDTHH:mm'), meant as
+// a Europe/London wall-clock time, into a UTC ISO instant — independent of the
+// host machine's timezone. Two-pass correction: render a UTC candidate through
+// the UK formatter, add the wall-clock difference, repeat once (the second pass
+// settles DST boundaries). Returns null when the input is unparseable.
+export function ukWallClockToIso(local: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(local);
+  if (!m) return null;
+  const [, y, mo, d, h, mi] = m.map(Number);
+  const typed = Date.UTC(y, mo - 1, d, h, mi);
+  if (Number.isNaN(typed)) return null;
+  let candidate = typed;
+  for (let pass = 0; pass < 2; pass++) {
+    const p = ukParts(new Date(candidate));
+    const rendered = Date.UTC(
+      Number(p.year),
+      Number(p.month) - 1,
+      Number(p.day),
+      Number(p.hour) % 24,
+      Number(p.minute),
+    );
+    const diff = typed - rendered;
+    if (diff === 0) break;
+    candidate += diff;
+  }
+  const result = new Date(candidate);
+  if (Number.isNaN(result.getTime())) return null;
+  return result.toISOString();
+}
+
 // Plain YYYY-MM-DD strings are calendar dates, not instants: reformat by string
 // split, NEVER via new Date() (which would shift across timezones).
 export function ymdToDisplay(ymd: string): string {
