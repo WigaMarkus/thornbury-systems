@@ -1,5 +1,5 @@
 import { engineers, type Engineer, type WorkOrder } from '../db.ts';
-import { sameDay } from '../shared/dates.ts';
+import { sameUkDay } from '../shared/dates.ts';
 import { normaliseAddress } from './address.ts';
 
 export interface Assignment {
@@ -21,14 +21,15 @@ function canDo(engineer: Engineer, order: WorkOrder): boolean {
 // and '14 ashfield row, bristol' on the next, and comparing the raw strings let
 // both through.
 //
-// sameDay is a UTC day. For a visit either side of UK midnight that is not the
-// day the customer means, so a genuine out of hours job can still be mistaken for
-// a duplicate of the previous day's visit. That belongs with JOB D, which is
-// fixing the UTC and UK local split in shared/dates.ts.
+// The day is the UK day, not the UTC day. This was the second half of W-4412
+// (JOB D): with a UTC day, Trelawney's 23:30Z backflow test counted as the same
+// day as their 09:00Z one and was dropped from the plan, so nobody would have
+// turned up at all. By the rule in address.ts, silently dropping a real visit is
+// worse than the duplicate this check exists to prevent.
 function alreadyVisiting(address: string, when: Date, planned: Assignment[]): boolean {
   const key = normaliseAddress(address);
   return planned.some(
-    (a) => normaliseAddress(a.address) === key && sameDay(new Date(a.startsAt), when),
+    (a) => normaliseAddress(a.address) === key && sameUkDay(new Date(a.startsAt), when),
   );
 }
 

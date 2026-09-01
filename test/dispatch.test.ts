@@ -64,3 +64,33 @@ test('the plan keeps the address as it was typed', () => {
   const plan = dispatch([order({ id: 'W-1', address: '14 Ashfield Row, Bristol' })]);
   assert.equal(plan[0].address, '14 Ashfield Row, Bristol');
 });
+
+// W-4412 / JOB D, second half. Trelawney's out of hours backflow test is 23:30Z,
+// which is the next day in BST. Compared as a UTC day it looked like a repeat of
+// their 09:00Z visit and was dropped from the plan, so no engineer would have
+// been sent at all.
+test('an out of hours job is a different day, not a duplicate of the morning', () => {
+  const plan = dispatch(workOrders);
+  const trelawney = plan.filter((a) => a.workOrderId === 'W-5003' || a.workOrderId === 'W-5006');
+  assert.deepEqual(trelawney.map((a) => a.workOrderId), ['W-5003', 'W-5006']);
+});
+
+test('two visits to one address either side of UK midnight both get a van', () => {
+  const plan = dispatch([
+    order({ id: 'W-1', address: '2 Bell Lane, Thornbury', requestedAt: '2026-09-02T22:00:00Z' }),
+    order({ id: 'W-2', address: '2 Bell Lane, Thornbury', requestedAt: '2026-09-02T23:30:00Z' }),
+  ]);
+
+  // 22:00Z is 23:00 on the 2nd, 23:30Z is 00:30 on the 3rd. Different UK days.
+  assert.deepEqual(plan.map((a) => a.workOrderId), ['W-1', 'W-2']);
+});
+
+test('two visits to one address inside the same UK day still get one van', () => {
+  const plan = dispatch([
+    order({ id: 'W-1', address: '2 Bell Lane, Thornbury', requestedAt: '2026-09-02T23:00:00Z' }),
+    order({ id: 'W-2', address: '2 Bell Lane, Thornbury', requestedAt: '2026-09-02T23:30:00Z' }),
+  ]);
+
+  // 00:00 and 00:30 on the 3rd in UK local. Same day, so still a duplicate.
+  assert.deepEqual(plan.map((a) => a.workOrderId), ['W-1']);
+});

@@ -56,7 +56,7 @@ export function ukDateKey(d: Date): string {
 }
 
 // The UTC calendar date. Internal bookkeeping only, never shown to a customer.
-// sameDay and the bank holiday list are both on this, so both are UTC days.
+// The bank holiday list is on this, so those are UTC days.
 export function toDateKey(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
@@ -88,6 +88,11 @@ export function formatSlotTime(d: Date): string {
   return `${hour}:${minute}`;
 }
 
-export function sameDay(a: Date, b: Date): boolean {
-  return toDateKey(a) === toDateKey(b);
+// Whether two instants fall on the same day as the customer would count days.
+// This is the UK day, not the UTC day: an out of hours visit at 23:30Z in the
+// summer is the next day for everyone involved, including the engineer. The UTC
+// version of this silently treated a late job as a repeat of the previous day's
+// visit and dropped it from the plan. See jobs/JOB-D-timezone.md.
+export function sameUkDay(a: Date, b: Date): boolean {
+  return ukDateKey(a) === ukDateKey(b);
 }
