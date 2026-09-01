@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --color-brand-50: #eff8ff;
+  --color-brand-500: #0e7fc1;
+  --color-brand-600: #0369a1;
+  --color-navy-800: #16283e;
+  --color-navy-900: #0e1c2e;
+}
+
+body {
+  background-color: var(--color-slate-50);
+  color: var(--color-slate-900);
+  -webkit-font-smoothing: antialiased;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background-color: white;
+  }
+  /* When a .print-visible region exists, it is the only thing that prints. */
+  body:has(.print-visible) * {
+    visibility: hidden;
+  }
+  body:has(.print-visible) .print-visible,
+  body:has(.print-visible) .print-visible * {
+    visibility: visible;
+  }
+  body:has(.print-visible) .print-visible {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 1.5rem;
+    background: white;
+  }
+}
