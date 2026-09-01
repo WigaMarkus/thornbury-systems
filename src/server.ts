@@ -403,6 +403,14 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     return res.end();
   }
 
+  // The same URLs serve two audiences. A navigating browser sends
+  // Accept: text/html and gets the front end (so / and /customers render the
+  // app, and a refresh on a client-side route works); the test suite, curl and
+  // the front end's own fetch calls send */* and get the JSON API.
+  if (method === 'GET' && (req.headers.accept ?? '').includes('text/html') && serveStatic(req, res, url)) {
+    return;
+  }
+
   const pathMatches = ROUTES.filter((r) => matches(r, parts));
   const route = pathMatches.find((r) => r.method === method);
 

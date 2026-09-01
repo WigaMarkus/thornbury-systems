@@ -50,6 +50,21 @@ export interface DispatchResult {
 // skipped without comment: they are not waiting for a van, so they are neither
 // assigned nor unassigned.
 export function dispatchDetailed(orders: WorkOrder[]): DispatchResult {
+  // Visits already on the road count against the one-visit-per-address-per-day
+  // rule too. Without this, the run that rightly suppressed a duplicate forgets
+  // it ever existed once the first order is marked DISPATCHED, and the next run
+  // sends the second van after all - the same two-vans complaint, one run
+  // apart. DONE orders do not count: that visit has happened, and a new order
+  // at the same address is a new problem, not a duplicate.
+  const committed: Assignment[] = orders
+    .filter((o) => o.status === 'DISPATCHED')
+    .map((o) => ({
+      workOrderId: o.id,
+      engineerId: o.engineerId ?? '',
+      address: o.address,
+      startsAt: o.requestedAt,
+    }));
+
   const planned: Assignment[] = [];
   const unassigned: Unassigned[] = [];
 
@@ -57,7 +72,7 @@ export function dispatchDetailed(orders: WorkOrder[]): DispatchResult {
     if (order.status !== 'QUEUED') continue;
     const when = new Date(order.requestedAt);
 
-    if (alreadyVisiting(order.address, when, planned)) {
+    if (alreadyVisiting(order.address, when, planned) || alreadyVisiting(order.address, when, committed)) {
       unassigned.push({ workOrderId: order.id, reason: 'DUPLICATE_VISIT' });
       continue;
     }
